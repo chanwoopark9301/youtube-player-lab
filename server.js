@@ -9,27 +9,32 @@ import { z } from 'zod';
 
 const base = dirname(fileURLToPath(import.meta.url));
 const html = readFileSync(join(base,'public','player.html'),'utf8');
-const RESOURCE = 'ui://youtube-player-lab/player.html';
+const playerUrl = new URL(process.env.PUBLIC_ORIGIN || 'https://youtube-player-lab.onrender.com');
+if (!['http:','https:'].includes(playerUrl.protocol)) throw new Error('PUBLIC_ORIGIN must be an HTTP(S) origin');
+const playerOrigin = playerUrl.origin;
+const appHtml = readFileSync(join(base,'public','hosted-player.html'),'utf8').replaceAll('__PLAYER_ORIGIN__',playerOrigin);
+const RESOURCE = 'ui://youtube-player-lab/https-player-v1.html';
+const LEGACY_RESOURCE = 'ui://youtube-player-lab/player.html';
 const DEFAULT_VIDEO = 'M7lc1UVf-VE';
 const VIDEO_ID = /^[a-zA-Z0-9_-]{11}$/;
 const port = Number(process.env.PORT || 8787);
 const widgetOrigin = process.env.WIDGET_ORIGIN;
 
 function createMcpServer() {
-  const server = new McpServer({name:'youtube-player-lab',version:'0.1.0'});
-  registerAppResource(server,'youtube-player-lab',RESOURCE,{},async()=>({
-    contents:[{uri:RESOURCE,mimeType:RESOURCE_MIME_TYPE,text:html,_meta:{
+  const server = new McpServer({name:'youtube-player-lab',version:'0.1.1'});
+  for (const [index,uri] of [RESOURCE,LEGACY_RESOURCE].entries()) registerAppResource(server,'youtube-player-lab-'+index,uri,{},async()=>({
+    contents:[{uri,mimeType:RESOURCE_MIME_TYPE,text:appHtml,_meta:{
       ui:{
         prefersBorder:true,
         ...(widgetOrigin?{domain:widgetOrigin}:{}),
         csp:{
-          resourceDomains:['https://www.youtube.com','https://www.gstatic.com','https://i.ytimg.com','https://s.ytimg.com'],
-          connectDomains:['https://www.youtube.com','https://www.youtube-nocookie.com'],
-          frameDomains:['https://www.youtube.com','https://www.youtube-nocookie.com']
+          resourceDomains:[],
+          connectDomains:[],
+          frameDomains:[playerOrigin]
         }
       },
       'openai/ui':{availableDisplayModes:['inline','fullscreen']},
-      'openai/widgetDescription':'Interactive official YouTube player with diagnostics. Streams directly from YouTube; no download or proxy.'
+      'openai/widgetDescription':'Official YouTube player hosted on our HTTPS page with diagnostics. Video streams directly from YouTube; no download or proxy.'
     }}]
   }));
   registerAppTool(server,'open_youtube_player',{
