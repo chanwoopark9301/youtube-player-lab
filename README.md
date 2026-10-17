@@ -18,6 +18,8 @@ YouTube embedding can fail inside ChatGPT due to frame restrictions or referrer 
 
 Refresh the custom plugin after deploying changed tool schemas and rerun the player for `ui://youtube-player-lab/conversation-v6.html`. Mac and mobile behavior require separate live verification; unit tests do not establish either device's playback or autoplay policy.
 
+Live verification on 2026-10-17: Render search returned real candidates and a visible Mac player acknowledged a video switch. Direct public captions succeeded locally for two videos, but Render's request was blocked at the watch-page stage. Automatic spoken-content answers across mobile/Mac are therefore **not complete**. See [the verification record](docs/verification/2026-10-17-assistant.md) for device and source boundaries.
+
 ## Player layout and separate window
 
 The normal view contains the official YouTube player plus a compact toolbar outside the video. The wrapper and hosted page fill the available viewport without fixed pixel heights, outer margins, or document scrolling. Both iframe boundaries explicitly delegate fullscreen before navigation. Native YouTube fullscreen and the host app's fullscreen display mode are separate; a host restriction cannot be overridden by the child page. The earlier diagnostic UI remains available at `/diagnostics`.
