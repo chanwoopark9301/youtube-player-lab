@@ -37,6 +37,37 @@ test('search returns verified source records for the conversation model to recom
   assert.equal(r.structuredContent.source,'youtube-public-search');
 });
 
+test('recommendation item selection is bound to its ordered result instead of a global index',async t=>{
+  let ids=[A,B];
+  const a=await app(t,{search:async query=>({query,source:'youtube-public-search',videos:ids.map(videoId=>({videoId,title:videoId,channel:'fixture',watchUrl:'https://www.youtube.com/watch?v='+videoId}))})});
+  const first=(await a.call('search_youtube_videos',{query:'first interest'})).structuredContent;
+  assert.match(first.resultId,/^[A-Za-z0-9_-]{43}$/);
+  assert.deepEqual(first.videos.map(v=>v.itemNumber),[1,2]);
+  ids=[B,A];
+  const second=(await a.call('search_youtube_videos',{query:'changed feedback'})).structuredContent;
+  assert.notEqual(first.resultId,second.resultId);
+  const opened=(await a.call('open_youtube_player',{videoId:A})).structuredContent;
+  const chosen=await a.call('control_youtube_player',{playerRef:opened.playerRef,action:'select',resultId:first.resultId,itemNumber:2,expectedRevision:1});
+  assert.equal(chosen.structuredContent.command.videoId,B);
+  assert.equal(chosen.structuredContent.confirmed,false);
+  const invalid=await a.call('control_youtube_player',{playerRef:opened.playerRef,action:'select',resultId:second.resultId,itemNumber:2,videoId:B});
+  assert.equal(invalid.isError,true);
+  assert.equal(invalid.structuredContent.code,'invalid_selection');
+  for(const selection of [{resultId:first.resultId},{itemNumber:2},{action:'play',resultId:first.resultId,itemNumber:2}]){
+    const rejected=await a.call('control_youtube_player',{playerRef:opened.playerRef,action:'select',...selection});
+    assert.equal(rejected.isError,true);
+    assert.equal(rejected.structuredContent.code,'invalid_selection');
+  }
+  assert.equal((await a.call('get_youtube_player_state',{playerRef:opened.playerRef})).structuredContent.requested.videoId,B);
+});
+
+test('empty search results have no selectable recommendation identity',async t=>{
+  const a=await app(t,{search:async query=>({query,source:'youtube-public-search',videos:[]})});
+  const data=(await a.call('search_youtube_videos',{query:'no results'})).structuredContent;
+  assert.equal(data.resultId,null);
+  assert.deepEqual(data.videos,[]);
+});
+
 test('browser reporting keys stay UI-only and control requests require real browser observations',async t=>{
   const a=await app(t);
   const opened=await a.call('open_youtube_player',{videoId:A});
@@ -63,17 +94,21 @@ test('browser reporting keys stay UI-only and control requests require real brow
 
 test('caption pages expose partial coverage and stay bound to an explicit video',async t=>{
   const a=await app(t);
+  const requestedAt=Date.now();
   const first=(await a.call('get_youtube_transcript',{videoId:A})).structuredContent;
   assert.equal(first.videoId,A);
   assert.equal(first.cues.length,150);
   assert.equal(first.totalCues,205);
   assert.equal(first.nextCursor,150);
   assert.equal(first.complete,false);
+  assert.ok(Date.parse(first.acquiredAt)>=requestedAt&&Date.parse(first.acquiredAt)<=Date.now());
+  assert.deepEqual(first.coveredTimeRange,{start:0,end:300});
   const second=(await a.call('get_youtube_transcript',{videoId:A,cursor:150})).structuredContent;
   assert.equal(second.cues.length,55);
   assert.equal(second.cues[0].text,'caption 150');
   assert.equal(second.nextCursor,null);
   assert.equal(second.complete,false,'a final page alone is not the whole transcript');
+  assert.deepEqual(second.coveredTimeRange,{start:300,end:410});
 });
 
 test('a late caption response cannot be returned as the current video after a switch',async t=>{

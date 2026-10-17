@@ -28,6 +28,8 @@ Use the public bootstrap/player/timedtext text path. The watch request previousl
 
 YouTube Data API caption download does not provide arbitrary public-video transcripts: it requires OAuth and permission to edit the video. An API key for search does not solve that restriction. Desktop browser transcript export was tested for one sample but is not the mobile/server solution.
 
+If another already-connected transcript tool actually returns caption text, ChatGPT can use it for the exact current video while explicitly naming that source. Recheck player video/revision after retrieval; do not send conversation history or imply the server's direct extraction succeeded. Source text without timestamps can support content answers but cannot establish exact time citations. On 2026-10-17 the connected vidIQ transcript tool returned real English text for `jNQXAC9IVRw` using 5 existing renewable credits, without adding an AI-provider integration to this repository.
+
 ## Delivery and validation
 
 Implement direct public search/captions, visible player control and latest-video context, then model-grounded recommendations and answers. Existing playback remains deployed while these changes are developed and reviewed. Provider/key onboarding is not a dependency.
