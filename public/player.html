@@ -58,8 +58,15 @@ window.addEventListener('message',event=>{
   if(event.source!==window.parent)return;
   const data=event.data;
   if(data?.method==='ui/notifications/tool-result'){
-    selectVideo(data.params?.structuredContent?.videoId);
-    connect(data.params?._meta?.playerConnection);
+    const id=data.params?.structuredContent?.videoId;
+    if(!valid(id))return;
+    const candidate=data.params?._meta?.playerConnection;
+    if(validKey(candidate?.playerRef)&&validKey(candidate?.reportKey)){
+      // A tool result describes the initial selection. Once connected, the
+      // session's revision is authoritative, including after video changes.
+      if(!ready&&candidate.playerRef!==connection?.playerRef)selectVideo(id);
+      connect(candidate);
+    }else if(!connection)selectVideo(id);
   }
 });
 window.onYouTubeIframeAPIReady=()=>{
@@ -76,7 +83,7 @@ window.onYouTubeIframeAPIReady=()=>{
     frame.src='https://www.youtube.com/embed/'+video+'?'+params.toString();
     document.getElementById('player').replaceWith(frame);
     player=new YT.Player(frame,{events:{
-      onReady:event=>{player=event.target;ready=true;state.playerState='ready';if(video!==loadedVideo)player.cueVideoById(video);startConnection()},
+      onReady:event=>{player=event.target;ready=true;state.playerState='ready';if(video!==loadedVideo&&!connection)player.cueVideoById(video);startConnection()},
       onStateChange:event=>{state.playerState=String(event.data);if(event.data===1){delete state.playerError;message.hidden=true}},
       onError:event=>{state.playerError=String(event.data)}
     }});

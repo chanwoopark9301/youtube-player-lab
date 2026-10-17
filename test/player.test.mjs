@@ -198,6 +198,15 @@ test('connects UI-only session credentials after YouTube readiness and reads act
   assert.deepEqual(runtime.loads,['jNQXAC9IVRw']);
   runtime.message(runtime.parent,data);
   assert.equal(runtime.connections.length,1,'duplicate tool notification must not replace its own connection');
+  assert.deepEqual(runtime.cues,[],'an old host result must not revert a server-controlled video selection');
+});
+
+test('a session selection received during iframe loading avoids a competing ready-time cue',()=>{
+  const runtime=openPlayer();runtime.apiReady();
+  runtime.message(runtime.parent,{method:'ui/notifications/tool-result',params:{structuredContent:{videoId:'jNQXAC9IVRw'},_meta:{playerConnection:{playerRef:'a'.repeat(43),reportKey:'b'.repeat(43)}}}});
+  runtime.ready();
+  assert.deepEqual(runtime.cues,[],'the connected session owns selection after readiness');
+  assert.equal(runtime.connections.length,1);
 });
 
 test('a recovered YouTube playback clears an earlier error from observed session state',()=>{
