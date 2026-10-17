@@ -1,5 +1,6 @@
 <!doctype html>
 <html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="referrer" content="strict-origin-when-cross-origin">
 <title>YouTube Player Lab</title>
 <style>
 :root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#10141c;color:#f4f6fc;font:14px/1.5 system-ui,-apple-system,sans-serif}
@@ -20,10 +21,11 @@ code{overflow-wrap:anywhere}a{color:#9cceff}details summary{cursor:pointer}
 <div class="frame"><div id="player"></div><div id="overlay" class="overlay">YouTube API 연결 중…</div></div>
 <section class="panel"><div class="row"><strong>재생 상태</strong><span id="status" class="pill" data-tone="warn">초기화 대기</span></div>
 <div class="controls"><button id="play" class="primary" disabled>▶ 재생</button><button id="pause" disabled>Ⅱ 일시정지</button><button id="back" disabled>−10초</button><button id="forward" disabled>+10초</button></div>
-<p>자동재생 없음. 실제로 재생 상태가 바뀌는지 아래 로그로 확인해.</p></section>
+<p>첫 재생은 영상 화면 중앙의 YouTube ▶ 버튼을 직접 눌러 줘. 아래 준비 완료는 재생 성공을 뜻하지 않아.</p><p id="diagnosis" role="status" hidden></p></section>
 <section class="panel"><label for="video">유튜브 주소 또는 영상 ID</label><div class="row"><input id="video" placeholder="https://www.youtube.com/watch?v=..."><button id="load">영상 불러오기</button></div><p id="validation">기본값: YouTube 공식 IFrame API 예제 영상</p></section>
 <section class="panel"><div class="row"><strong>진단 로그</strong><button id="copy" style="margin-left:auto">복사</button></div>
-<p>Origin: <code id="origin"></code> | Video ID: <code id="vid"></code></p>
+<p>진단 버전: <code>referrer-20261017-1</code><br>URL Origin: <code id="origin"></code><br>실행 Origin: <code id="effective-origin"></code><br>iframe referrer 정책 설정값: <code id="referrer-policy">초기화 대기</code><br>Video ID: <code id="vid"></code></p>
+<p>실행 Origin이 null이면 호스트 격리로 출처가 익명화된 상태야. 정책 설정값과 페이지가 받은 referrer는 실제 YouTube 요청의 Referer 헤더를 증명하지 않아.</p>
 <details open><summary>이벤트 기록</summary><pre id="events"></pre></details></section>
 <p>YouTube 오류 153은 Referer/식별 문제, 101·150은 임베드 제한, 100은 영상 접근 문제를 의미할 수 있어. 오류 없이 검은 화면만 나오면 API 초기화·CSP·iframe 허용 여부를 살펴봐야 해.</p>
 </main>
@@ -31,18 +33,21 @@ code{overflow-wrap:anywhere}a{color:#9cceff}details summary{cursor:pointer}
 (()=>{
 'use strict';
 const $=id=>document.getElementById(id);const official='M7lc1UVf-VE';const valid=id=>/^[A-Za-z0-9_-]{11}$/.test(id);
+const effectiveOrigin=typeof window.origin==='string'?window.origin:null;
 let player=null,video=official,ready=false,timer=null;const logs=[];const err={2:'잘못된 매개변수',5:'HTML5 플레이어 오류',100:'삭제·비공개·미존재',101:'영상 임베드 금지',150:'영상 임베드 금지',153:'Referer 또는 API 클라이언트 식별 누락'};
 const log=s=>{logs.push('['+new Date().toLocaleTimeString('ko-KR',{hour12:false})+'] '+s);if(logs.length>100)logs.shift();$('events').textContent=logs.join('\n');$('events').scrollTop=$('events').scrollHeight};
 const status=(s,t='warn')=>{$('status').textContent=s;$('status').dataset.tone=t;log(s)};
 const enable=on=>['play','pause','back','forward'].forEach(id=>$(id).disabled=!on);
 function extract(s){s=(s||'').trim();if(valid(s))return s;try{const u=new URL(s);if(!['youtube.com','www.youtube.com','m.youtube.com','youtu.be','www.youtube-nocookie.com'].includes(u.hostname))return null;const v=u.hostname==='youtu.be'?u.pathname.slice(1).split('/')[0]:u.pathname.startsWith('/embed/')||u.pathname.startsWith('/shorts/')?u.pathname.split('/')[2]:u.searchParams.get('v');return valid(v)?v:null}catch{return null}}
-function load(id){if(!valid(id))return;video=id;$('vid').textContent=id;$('overlay').hidden=false;status('영상 교체 중');try{if(ready){player.cueVideoById(id);$('overlay').hidden=true;status('재생 대기','good')}else log('플레이어 초기화 중')}catch(e){status('교체 실패: '+e,'bad')}}
-function onReady(e){player=e.target;ready=true;clearTimeout(timer);$('overlay').hidden=true;enable(true);status('준비 완료 — ▶ 누르기','good');log('YT.Player onReady');if(video!==official)player.cueVideoById(video)}
-function onError(e){const n=Number(e.data);$('overlay').hidden=true;status('YouTube 오류 '+n+': '+(err[n]||'기타'),'bad');log('onError '+n)}
-function onState(e){const n={ '-1':'시작 전','0':'종료','1':'재생 중','2':'일시정지','3':'버퍼링 중','5':'재생 대기'};status(n[String(e.data)]||'상태 '+e.data,e.data===1?'good':'warn');log('onStateChange '+e.data)}
-window.onYouTubeIframeAPIReady=()=>{log('iframe_api 스크립트 로드됨');try{const v={playsinline:1,controls:1};if(location.origin&&location.origin!=='null')v.origin=location.origin;player=new YT.Player('player',{height:'100%',width:'100%',videoId:video,playerVars:v,events:{onReady,onError,onStateChange:onState,onAutoplayBlocked:()=>log('자동재생 차단')}})}catch(e){status('YT.Player 생성 실패: '+e,'bad')}};
+function load(id){if(!valid(id))return;video=id;$('vid').textContent=id;$('diagnosis').hidden=true;$('overlay').hidden=false;status('영상 교체 중');try{if(ready){player.cueVideoById(id);$('overlay').hidden=true;status('재생 대기','good')}else log('플레이어 초기화 중')}catch(e){status('교체 실패: '+e,'bad')}}
+function onReady(e){player=e.target;ready=true;clearTimeout(timer);$('overlay').hidden=true;enable(true);status('준비 완료 — YouTube ▶ 누르기');log('YT.Player onReady (재생 성공 아님)');const policy=player.getIframe().referrerPolicy||'미지정';$('referrer-policy').textContent=policy;log('iframe referrerPolicy 설정값='+policy+' (실제 Referer 헤더 아님)');if(video!==official)player.cueVideoById(video)}
+function onError(e){const n=Number(e.data);clearTimeout(timer);$('overlay').hidden=true;status('YouTube 오류 '+n+': '+(err[n]||'기타'),'bad');log('onError '+n);if(n===153){$('diagnosis').hidden=false;$('diagnosis').textContent='YouTube가 출처 식별 정보를 받지 못했어. 실행 Origin이 null이면 호스트 격리 제한 가능성이 있어. referrer 정책만 바꿔도 해결된다는 보장은 없어. Safari의 독립 /player 페이지와 비교해 줘.'}}
+function onState(e){if(e.data===1)$('diagnosis').hidden=true;const n={ '-1':'시작 전','0':'종료','1':'재생 중','2':'일시정지','3':'버퍼링 중','5':'재생 대기'};status(n[String(e.data)]||'상태 '+e.data,e.data===1?'good':'warn');log('onStateChange '+e.data)}
+window.onYouTubeIframeAPIReady=()=>{log('iframe_api 스크립트 로드됨');try{const v={playsinline:1,controls:1};const apiOrigin=effectiveOrigin??location.origin;if(/^https?:\/\//.test(apiOrigin))v.origin=apiOrigin;player=new YT.Player('player',{height:'100%',width:'100%',videoId:video,playerVars:v,events:{onReady,onError,onStateChange:onState,onAutoplayBlocked:()=>{log('자동재생 차단 (오류 153과 별개)');$('diagnosis').hidden=false;$('diagnosis').textContent='재생 명령이 브라우저 정책으로 차단됐어. 영상 화면 중앙의 YouTube ▶ 버튼을 직접 눌러 줘.'}}})}catch(e){status('YT.Player 생성 실패: '+e,'bad')}};
 $('origin').textContent=location.origin||'opaque';$('vid').textContent=video;
-log('페이지 로드: origin='+location.origin+' referrer='+document.referrer.slice(0,150));
+$('effective-origin').textContent=effectiveOrigin??'지원되지 않음';
+let incomingReferrer='없음';try{if(document.referrer)incomingReferrer=new URL(document.referrer).origin}catch{incomingReferrer='해석 불가'}
+log('진단 referrer-20261017-1: URL origin='+location.origin+' 실행 origin='+effectiveOrigin+' 수신 referrer origin='+incomingReferrer);
 const s=document.createElement('script');s.src='https://www.youtube.com/iframe_api';s.async=true;s.onerror=()=>status('iframe_api 다운로드 차단(CSP/네트워크)','bad');document.head.append(s);
 timer=setTimeout(()=>{if(!ready)status('20초 동안 onReady 없음 — 외부 iframe, CSP 또는 Referer 문제','bad')},20000);
 window.addEventListener('error',e=>log('JS 오류: '+e.message));window.addEventListener('unhandledrejection',e=>log('Promise 오류: '+String(e.reason)));
