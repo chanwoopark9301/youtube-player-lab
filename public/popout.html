@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="referrer" content="strict-origin-when-cross-origin">
+<title>YouTube 독립 플레이어</title>
+<style>
+:root{color-scheme:dark}html,body{width:100%;height:100%;margin:0;overflow:hidden;background:#000;color:#eee;font:12px/1.4 system-ui,sans-serif}
+#popout{display:flex;flex-direction:column;width:100%;height:100%;background:#000}
+.toolbar{display:flex;flex:0 0 auto;align-items:center;gap:10px;padding:5px 8px;background:#151515}
+button{flex:0 0 auto;border:1px solid #555;border-radius:5px;background:#252525;color:#eee;padding:4px 9px;font:inherit;cursor:pointer}
+button:hover:not(:disabled){background:#393939}button:focus-visible{outline:2px solid #8bb9ff;outline-offset:2px}button:disabled{opacity:.5;cursor:wait}
+#fullscreen-status{margin:0;overflow-wrap:anywhere}#fullscreen-status[hidden]{display:none}
+#player-frame{display:block;flex:1 1 0;min-height:0;width:100%;border:0;background:#000}
+:fullscreen .toolbar{display:none}
+:-webkit-full-screen .toolbar{display:none}
+</style>
+</head>
+<body>
+<main id="popout" aria-label="독립 영상 플레이어">
+<div class="toolbar" role="toolbar" aria-label="영상 창 설정">
+<button id="fullscreen-button" type="button" aria-pressed="false">전체화면 시작</button>
+<p id="fullscreen-status" role="status" aria-live="polite" hidden></p>
+</div>
+<iframe id="player-frame" title="YouTube 영상 플레이어"></iframe>
+</main>
+<script>
+(()=>{
+'use strict';
+const params=new URLSearchParams(location.search);
+const initial=params.get('videoId');
+const video=typeof initial==='string'&&/^[A-Za-z0-9_-]{11}$/.test(initial)?initial:'M7lc1UVf-VE';
+const main=document.getElementById('popout'),frame=document.getElementById('player-frame');
+const button=document.getElementById('fullscreen-button'),status=document.getElementById('fullscreen-status');
+let pending=false,wasFullscreen=false,autoAttempted=false,automaticPending=false;
+const isFullscreen=()=>Boolean(document.fullscreenElement||document.webkitFullscreenElement||document.webkitIsFullScreen);
+function showStatus(text){status.textContent=text;status.hidden=!text}
+function syncFullscreen(){
+  const active=isFullscreen();
+  button.textContent=active?'전체화면 종료':'전체화면 시작';
+  button.setAttribute('aria-pressed',String(active));
+  if(active||wasFullscreen)showStatus('');
+  wasFullscreen=active;
+}
+function startMethod(){
+  for(const target of [main,document.documentElement]){
+    if(typeof target.requestFullscreen==='function')return [target,target.requestFullscreen];
+    if(typeof target.webkitRequestFullscreen==='function')return [target,target.webkitRequestFullscreen];
+  }
+  return null;
+}
+function retryMessage(automatic){
+  return automatic?'자동으로 전체화면을 시작하지 못했어요. 이 창에서 ‘전체화면 시작’을 눌러 주세요.':'전체화면을 시작하지 못했어요. 이 창에서 ‘전체화면 시작’을 다시 눌러 주세요.';
+}
+async function toggleFullscreen(automatic=false){
+  if(pending)return;
+  const exiting=isFullscreen();
+  const method=exiting?(typeof document.exitFullscreen==='function'?[document,document.exitFullscreen]:typeof document.webkitExitFullscreen==='function'?[document,document.webkitExitFullscreen]:null):startMethod();
+  if(!method){
+    showStatus(exiting?'이 브라우저에서 전체화면 종료를 요청할 수 없어요. Esc 키로 나가 주세요.':automatic?retryMessage(true):'이 브라우저에서는 버튼으로 전체화면을 시작할 수 없어요. 브라우저의 전체화면 기능을 이용해 주세요.');
+    return;
+  }
+  pending=true;automaticPending=automatic;button.disabled=true;
+  showStatus(exiting?'전체화면을 종료하는 중…':'전체화면 시작을 요청하는 중…');
+  try{
+    await method[1].call(method[0]);
+    syncFullscreen();
+    if(!exiting&&!isFullscreen())showStatus(retryMessage(automatic));
+    else if(exiting&&isFullscreen())showStatus('전체화면 종료를 확인하지 못했어요. Esc 키를 누르거나 다시 시도해 주세요.');
+  }catch{
+    syncFullscreen();
+    showStatus(exiting?'전체화면을 종료하지 못했어요. Esc 키를 누르거나 다시 시도해 주세요.':retryMessage(automatic));
+  }finally{pending=false;automaticPending=false;button.disabled=false}
+}
+button.addEventListener('click',()=>toggleFullscreen());
+document.addEventListener('fullscreenchange',syncFullscreen);
+document.addEventListener('webkitfullscreenchange',syncFullscreen);
+const onFullscreenError=()=>showStatus(retryMessage(automaticPending));
+document.addEventListener('fullscreenerror',onFullscreenError);
+document.addEventListener('webkitfullscreenerror',onFullscreenError);
+frame.title='YouTube 영상 플레이어';
+frame.allow='autoplay; fullscreen; picture-in-picture';
+frame.allowFullscreen=true;
+frame.referrerPolicy='strict-origin-when-cross-origin';
+frame.src='/player?'+new URLSearchParams({videoId:video}).toString();
+showStatus('');syncFullscreen();
+if(params.get('fullscreen')==='1'){
+  const tryAutomatic=()=>{if(autoAttempted)return;autoAttempted=true;return toggleFullscreen(true)};
+  if(document.readyState==='complete')tryAutomatic();
+  else window.addEventListener('load',tryAutomatic,{once:true});
+}
+})();
+</script>
+</body>
+</html>

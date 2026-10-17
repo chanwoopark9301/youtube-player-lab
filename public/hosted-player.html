@@ -11,15 +11,16 @@ body{display:flex;flex-direction:column;font:12px/1.4 system-ui,sans-serif}
 #display-controls{display:flex;flex:0 0 auto;align-items:center;gap:6px;padding:5px 8px;flex-wrap:wrap;background:#151515}
 button{border:1px solid #555;border-radius:6px;background:#252525;color:#eee;padding:4px 8px;font:inherit;cursor:pointer}
 button:hover:not(:disabled){background:#393939}button:focus-visible{outline:2px solid #8bb9ff;outline-offset:1px}button:disabled{opacity:.45;cursor:default}
+#external-link{color:#c9ddff;padding:4px 2px}#external-link[hidden]{display:none}
 #display-status{flex:0 0 auto;margin:0;padding:4px 8px;color:#ddd;background:#151515;overflow-wrap:anywhere}
 #display-status[hidden]{display:none}iframe{display:block;flex:1 1 0;min-height:0;width:100%;border:0}
 </style>
 </head>
 <body>
-<div id="display-controls" role="group" aria-label="플레이어 표시 모드">
-<button id="popup-button" type="button" disabled>팝업</button>
-<button id="expand-button" type="button" disabled>팝업 후 전체화면</button>
-<button id="inline-button" type="button" disabled>채팅으로</button>
+<div id="display-controls" role="group" aria-label="독립 플레이어 열기">
+<button id="popup-button" type="button" title="영상만 담긴 별도 창이나 탭으로 열기">팝업</button>
+<button id="expand-button" type="button" title="독립 플레이어에서 전체화면 시작">팝업 후 전체화면</button>
+<a id="external-link" target="_blank" rel="noopener" hidden>직접 열기 ↗</a>
 </div>
 <p id="display-status" role="status" aria-live="polite" hidden></p>
 <iframe id="hosted-player" title="YouTube Player Lab HTTPS" allow="autoplay; fullscreen; picture-in-picture" allowfullscreen></iframe>
@@ -28,28 +29,24 @@ button:hover:not(:disabled){background:#393939}button:focus-visible{outline:2px 
 'use strict';
 const playerOrigin=new URL('__PLAYER_ORIGIN__').origin;
 const frame=document.getElementById('hosted-player');
-const popupButton=document.getElementById('popup-button'),expandButton=document.getElementById('expand-button'),inlineButton=document.getElementById('inline-button');
+const popupButton=document.getElementById('popup-button'),expandButton=document.getElementById('expand-button'),externalLink=document.getElementById('external-link');
 const status=document.getElementById('display-status'),state=document.documentElement.dataset;
-const modes=['inline','pip','fullscreen'],pending=new Map();
-let bridgeReady=false,availableModes=null,displayMode=null,busy=false,nextId=0,statusKind='';
-let loaded=false,pendingVideo=null;
-function showStatus(text,kind='action'){status.textContent=text;status.hidden=!text;statusKind=text?kind:''}
+const pending=new Map();
+let bridgeReady=false,hostOpenLinks=false,busy=false,nextId=0;
+let loaded=false,pendingVideo=null,video='M7lc1UVf-VE',lastFullscreen=false;
+function showStatus(text){status.textContent=text;status.hidden=!text}
 function renderControls(){
-  const connected=bridgeReady||typeof window.openai?.requestDisplayMode==='function';
-  state.displayBridge=bridgeReady?'mcp':connected?'openai':'unavailable';
-  state.availableDisplayModes=availableModes===null?'unknown':availableModes.join(',');
-  popupButton.disabled=busy||!connected||(availableModes!==null&&!availableModes.includes('pip'));
-  expandButton.disabled=popupButton.disabled||(availableModes!==null&&!availableModes.includes('fullscreen'));
-  inlineButton.disabled=busy||!connected||(availableModes!==null&&!availableModes.includes('inline'));
-  if(!busy&&statusKind!=='error'){
-    if(connected&&availableModes!==null&&!availableModes.includes('pip'))showStatus('현재 이 화면에서는 고정 팝업 모드를 제공하지 않아요.','capability');
-    else if(statusKind==='capability')showStatus('');
-  }
+  popupButton.disabled=busy;expandButton.disabled=busy;
+  state.externalBridge=bridgeReady&&hostOpenLinks?'mcp':typeof window.openai?.openExternal==='function'?'openai':window.parent===window?'browser':'link';
+  state.hostOpenLinks=String(hostOpenLinks);
 }
-function updateContext(context){
-  if(modes.includes(context?.displayMode)){displayMode=context.displayMode;state.displayMode=displayMode}
-  if(Array.isArray(context?.availableDisplayModes))availableModes=context.availableDisplayModes.filter(mode=>modes.includes(mode));
-  renderControls();
+function destination(fullscreen){
+  const url=new URL('/popout',playerOrigin);url.searchParams.set('videoId',video);
+  if(fullscreen)url.searchParams.set('fullscreen','1');
+  return url.href;
+}
+function fallback(href,text){
+  externalLink.href=href;externalLink.target='_blank';externalLink.rel='noopener';externalLink.hidden=false;showStatus(text);
 }
 function request(method,params){
   return new Promise((resolve,reject)=>{
@@ -65,29 +62,28 @@ function bounded(promise){
     Promise.resolve(promise).then(value=>{clearTimeout(timer);resolve(value)},error=>{clearTimeout(timer);reject(error)});
   });
 }
-async function changeMode(mode){
-  const result=bridgeReady?await request('ui/request-display-mode',{mode}):await bounded(window.openai.requestDisplayMode({mode}));
-  const actual=modes.includes(result?.mode)?result.mode:window.openai?.displayMode;
-  if(!modes.includes(actual))throw new Error('unconfirmed');
-  updateContext({displayMode:actual});
-  if(actual!==mode)throw new Error('not-granted');
-}
-async function present(mode){
+async function openPlayer(fullscreen){
   if(busy)return;
-  busy=true;renderControls();
-  showStatus(mode==='fullscreen'?'고정 팝업을 거쳐 전체화면으로 전환 중…':mode==='pip'?'고정 팝업으로 전환 중…':'채팅 화면으로 돌아가는 중…');
+  lastFullscreen=fullscreen;
+  const href=destination(fullscreen);externalLink.href=href;externalLink.hidden=true;
+  busy=true;renderControls();showStatus('독립 플레이어 열기를 요청하는 중…');
   try{
-    if(mode==='fullscreen'&&displayMode!=='pip')await changeMode('pip');
-    await changeMode(mode);
-    showStatus('');
+    let result;
+    if(bridgeReady&&hostOpenLinks)result=await request('ui/open-link',{url:href});
+    else if(typeof window.openai?.openExternal==='function')result=await bounded(window.openai.openExternal({href,redirectUrl:false}));
+    else if(window.parent===window&&typeof window.open==='function')window.open(href,'_blank','popup=yes,width=960,height=600,noopener');
+    else throw new Error('unavailable');
+    if(result?.isError)throw new Error('host-error');
+    state.navigationState='requested';
+    fallback(href,'새 창이 열리지 않으면 직접 열기를 눌러 주세요.');
   }catch{
-    showStatus(mode==='fullscreen'?'전체화면 전환을 확인하지 못했어요. 팝업이 열렸다면 그 창에서 다시 눌러 주세요.':mode==='pip'?'고정 팝업 전환을 확인하지 못했어요. 이 앱에서 지원하지 않거나 요청이 거절됐을 수 있어요.':'채팅 화면으로 돌아가지 못했어요. 다시 눌러 주세요.','error');
+    state.navigationState='unconfirmed';
+    fallback(href,'창 열기 요청을 확인하지 못했어요. 직접 열기를 눌러 주세요.');
   }finally{busy=false;renderControls()}
 }
-popupButton.addEventListener('click',()=>present('pip'));
-expandButton.addEventListener('click',()=>present('fullscreen'));
-inlineButton.addEventListener('click',()=>present('inline'));
-window.addEventListener('openai:set_globals',event=>updateContext(event.detail?.globals));
+popupButton.addEventListener('click',()=>openPlayer(false));
+expandButton.addEventListener('click',()=>openPlayer(true));
+window.addEventListener('openai:set_globals',renderControls);
 function forward(videoId){
   frame.contentWindow.postMessage({method:'ui/notifications/tool-result',params:{structuredContent:{videoId}}},playerOrigin);
 }
@@ -100,10 +96,10 @@ window.addEventListener('message',event=>{
     if(message.error)item.reject(new Error('host-error'));else item.resolve(message.result);
     return;
   }
-  if(message?.method==='ui/notifications/host-context-changed'){updateContext(message.params);return}
   if(message?.method!=='ui/notifications/tool-result')return;
   const videoId=message.params?.structuredContent?.videoId;
   if(typeof videoId!=='string'||!/^[A-Za-z0-9_-]{11}$/.test(videoId))return;
+  video=videoId;state.videoId=videoId;externalLink.href=destination(lastFullscreen);
   if(loaded)forward(videoId);else pendingVideo=videoId;
 });
 frame.addEventListener('load',()=>{
@@ -112,14 +108,14 @@ frame.addEventListener('load',()=>{
 });
 frame.referrerPolicy='strict-origin-when-cross-origin';
 frame.src=playerOrigin+'/player';
-updateContext({displayMode:window.openai?.displayMode});
+externalLink.href=destination(false);externalLink.target='_blank';externalLink.rel='noopener';renderControls();
 if(typeof window.parent.postMessage==='function'&&window.parent!==window){
-  request('ui/initialize',{appInfo:{name:'youtube-player-lab',version:'0.1.4'},appCapabilities:{availableDisplayModes:modes},protocolVersion:'2026-01-26'}).then(result=>{
+  request('ui/initialize',{appInfo:{name:'youtube-player-lab',version:'0.1.5'},appCapabilities:{availableDisplayModes:['inline','fullscreen']},protocolVersion:'2026-01-26'}).then(result=>{
     if(!result||typeof result.protocolVersion!=='string'||!result.hostCapabilities)throw new Error('initialize');
-    bridgeReady=true;updateContext(result.hostContext);
+    bridgeReady=true;hostOpenLinks=Boolean(result.hostCapabilities.openLinks);renderControls();
     window.parent.postMessage({jsonrpc:'2.0',method:'ui/notifications/initialized'},'*');
-  }).catch(()=>{renderControls();if(state.displayBridge==='unavailable')showStatus('이 환경에서는 ChatGPT 고정 팝업을 사용할 수 없어요.')});
-}else if(state.displayBridge==='unavailable')showStatus('ChatGPT 안에서 팝업 버튼을 사용할 수 있어요.');
+  }).catch(()=>{renderControls()});
+}
 })();
 </script>
 </body>
