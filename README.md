@@ -8,9 +8,15 @@ Deploy on Render using Node, `npm install --omit=dev`, `npm start`.
 
 YouTube embedding can fail inside ChatGPT due to frame restrictions or referrer policy even when Safari standalone playback succeeds. Playback must be explicitly verified.
 
-## Video-only layout
+## Player layout and pinned popup
 
-The normal view contains only the official YouTube player and its native controls. The wrapper and hosted page fill the available viewport without fixed pixel heights, outer margins, or document scrolling. Both iframe boundaries explicitly delegate fullscreen before navigation. Native YouTube fullscreen and the host app's fullscreen display mode are separate; a host restriction cannot be overridden by the child page. The earlier diagnostic UI remains available at `/diagnostics`.
+The normal view contains the official YouTube player plus a compact toolbar outside the video. The wrapper and hosted page fill the available viewport without fixed pixel heights, outer margins, or document scrolling. Both iframe boundaries explicitly delegate fullscreen before navigation. Native YouTube fullscreen and the host app's fullscreen display mode are separate; a host restriction cannot be overridden by the child page. The earlier diagnostic UI remains available at `/diagnostics`.
+
+- **팝업:** requests the host's pinned `pip` presentation so the player can remain visible during conversation.
+- **팝업 후 전체화면:** first requests and verifies `pip`, then requests `fullscreen`. If already in confirmed PiP it requests fullscreen directly. It stops if the host rejects or substitutes a mode.
+- **채팅으로:** requests `inline` presentation.
+
+The component initializes the standard MCP Apps bridge and prefers `ui/request-display-mode`. `window.openai.requestDisplayMode` is a feature-detected compatibility fallback. Buttons respect advertised host modes, prevent overlapping requests, and report rejected, unconfirmed, or timed-out requests. The new toolbar does not intercept or cover YouTube's native fullscreen button. The [official PiP mode](https://developers.openai.com/plugins/concepts/ui-guidelines#picture-in-picture-pip) is a host-controlled floating surface, not a separate browser or OS window; fullscreen still depends on the host layout. Unit tests with a simulated host verify request behavior, not native Mac rendering.
 
 ## Error 153 diagnostics
 
@@ -20,7 +26,7 @@ The normal view contains only the official YouTube player and its native control
 - The incoming `document.referrer` identifies the referring page, not the header sent to YouTube. Only its origin is logged. An opaque sandbox may prevent an outgoing referrer even with the declared policy; another nested iframe cannot relax an ancestor's sandbox.
 - Start playback with YouTube's own center play button. A separate API play button can be blocked by the host's autoplay policy. `onReady` is initialization only. Verify `onStateChange 1` plus increasing playback time before reporting success.
 - The wrapper relays only a validated video ID from the MCP host to the exact player origin, including notifications received before the hosted frame loads. Other tool-result content is not forwarded.
-- Existing ChatGPT cards can retain earlier HTML. Refresh the custom plugin and rerun it to use `ui://youtube-player-lab/video-only-v2.html`. Previous resource URIs remain available for compatibility. The diagnostic route shows version `referrer-20261017-1`.
+- Existing ChatGPT cards can retain earlier HTML. Refresh the custom plugin and rerun it to use `ui://youtube-player-lab/popup-v3.html`. Previous resource URIs remain available for compatibility. The diagnostic route shows version `referrer-20261017-1`.
 
 Observed on 2026-10-17 before the HTTPS wrapper: the existing card in ChatGPT web on Mac played for over 18 seconds and paused correctly after enabling CSP enforcement. The native Mac MCP Apps viewer reproduced error 153 with a `codex-sandbox://` URL origin, an empty incoming referrer, and an iframe already configured with `strict-origin-when-cross-origin`. This is evidence of a host-environment difference, not a direct capture of the outgoing HTTP header. Custom-scheme referrer handling needs investigation in the native host. The wrapper is a targeted mitigation: a network-loaded HTTPS child can supply its own origin if the ancestor sandbox permits it. An inherited opaque-origin restriction could still prevent playback. Native playback must be verified for the newly loaded wrapper before claiming success.
 

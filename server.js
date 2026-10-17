@@ -14,7 +14,8 @@ const playerUrl = new URL(process.env.PUBLIC_ORIGIN || 'https://youtube-player-l
 if (!['http:','https:'].includes(playerUrl.protocol)) throw new Error('PUBLIC_ORIGIN must be an HTTP(S) origin');
 const playerOrigin = playerUrl.origin;
 const appHtml = readFileSync(join(base,'public','hosted-player.html'),'utf8').replaceAll('__PLAYER_ORIGIN__',playerOrigin);
-const RESOURCE = 'ui://youtube-player-lab/video-only-v2.html';
+const RESOURCE = 'ui://youtube-player-lab/popup-v3.html';
+const VIDEO_ONLY_RESOURCE = 'ui://youtube-player-lab/video-only-v2.html';
 const PREVIOUS_RESOURCE = 'ui://youtube-player-lab/https-player-v1.html';
 const LEGACY_RESOURCE = 'ui://youtube-player-lab/player.html';
 const DEFAULT_VIDEO = 'M7lc1UVf-VE';
@@ -23,8 +24,8 @@ const port = Number(process.env.PORT || 8787);
 const widgetOrigin = process.env.WIDGET_ORIGIN;
 
 function createMcpServer() {
-  const server = new McpServer({name:'youtube-player-lab',version:'0.1.2'});
-  for (const [index,uri] of [RESOURCE,PREVIOUS_RESOURCE,LEGACY_RESOURCE].entries()) registerAppResource(server,'youtube-player-lab-'+index,uri,{},async()=>({
+  const server = new McpServer({name:'youtube-player-lab',version:'0.1.3'});
+  for (const [index,uri] of [RESOURCE,VIDEO_ONLY_RESOURCE,PREVIOUS_RESOURCE,LEGACY_RESOURCE].entries()) registerAppResource(server,'youtube-player-lab-'+index,uri,{},async()=>({
     contents:[{uri,mimeType:RESOURCE_MIME_TYPE,text:appHtml,_meta:{
       ui:{
         prefersBorder:false,
@@ -35,18 +36,18 @@ function createMcpServer() {
           frameDomains:[playerOrigin]
         }
       },
-      'openai/ui':{availableDisplayModes:['inline','fullscreen']},
-      'openai/widgetDescription':'Only the official YouTube player and its native controls, fitted to the available view. Video streams directly from YouTube; no download or proxy.'
+      'openai/ui':{availableDisplayModes:['inline','pip','fullscreen']},
+      'openai/widgetDescription':'Official YouTube player with small controls to request a pinned ChatGPT popup, popup then fullscreen, or return inline. Display modes depend on host support. Video streams directly from YouTube; no download or proxy.'
     }}]
   }));
   registerAppTool(server,'open_youtube_player',{
     title:'Open YouTube Player Lab',
-    description:'Display an official YouTube player in a video-only view with native YouTube controls. No downloads or proxies.',
+    description:'Display an official YouTube player with native video controls and buttons for a pinned ChatGPT popup, popup then fullscreen, and returning inline when the host supports those modes. No downloads or proxies.',
     inputSchema:{videoId:z.string().regex(VIDEO_ID).default(DEFAULT_VIDEO)},
     annotations:{readOnlyHint:true,openWorldHint:true,destructiveHint:false},
     _meta:{ui:{resourceUri:RESOURCE}}
   },async({videoId=DEFAULT_VIDEO})=>({
-    content:[{type:'text',text:'YouTube player for video '+videoId+'. Use the native YouTube controls to play, pause, seek, or enter fullscreen.'}],
+    content:[{type:'text',text:'YouTube player for video '+videoId+'. Use the native controls for playback. The separate popup buttons request ChatGPT display modes; a host may reject or substitute a mode.'}],
     structuredContent:{videoId,watchUrl:'https://www.youtube.com/watch?v='+videoId}
   }));
   return server;
