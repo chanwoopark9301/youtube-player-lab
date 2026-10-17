@@ -40,7 +40,7 @@ function load(id){if(!valid(id))return;video=id;$('vid').textContent=id;$('overl
 function onReady(e){player=e.target;ready=true;clearTimeout(timer);$('overlay').hidden=true;enable(true);status('준비 완료 — ▶ 누르기','good');log('YT.Player onReady');if(video!==official)player.cueVideoById(video)}
 function onError(e){const n=Number(e.data);$('overlay').hidden=true;status('YouTube 오류 '+n+': '+(err[n]||'기타'),'bad');log('onError '+n)}
 function onState(e){const n={ '-1':'시작 전','0':'종료','1':'재생 중','2':'일시정지','3':'버퍼링 중','5':'재생 대기'};status(n[String(e.data)]||'상태 '+e.data,e.data===1?'good':'warn');log('onStateChange '+e.data)}
-window.onYouTubeIframeAPIReady=()=>{log('iframe_api 스크립트 로드됨');try{const v={playsinline:1,controls:1};if(location.origin&&location.origin!=='null')v.origin=location.origin;player=new YT.Player('player',{height:'100%',width:'100%',videoId:video,playerVars:v,events:{onReady,onError,onStateChange,onAutoplayBlocked:()=>log('자동재생 차단')}})}catch(e){status('YT.Player 생성 실패: '+e,'bad')}};
+window.onYouTubeIframeAPIReady=()=>{log('iframe_api 스크립트 로드됨');try{const v={playsinline:1,controls:1};if(location.origin&&location.origin!=='null')v.origin=location.origin;player=new YT.Player('player',{height:'100%',width:'100%',videoId:video,playerVars:v,events:{onReady,onError,onStateChange:onState,onAutoplayBlocked:()=>log('자동재생 차단')}})}catch(e){status('YT.Player 생성 실패: '+e,'bad')}};
 $('origin').textContent=location.origin||'opaque';$('vid').textContent=video;
 log('페이지 로드: origin='+location.origin+' referrer='+document.referrer.slice(0,150));
 const s=document.createElement('script');s.src='https://www.youtube.com/iframe_api';s.async=true;s.onerror=()=>status('iframe_api 다운로드 차단(CSP/네트워크)','bad');document.head.append(s);
