@@ -62,7 +62,7 @@ export function openWrapper({ openai, parentPostMessage = true, topLevel = false
     getElementById: id => elements.get(id) ?? null,
     querySelectorAll: selector => selector === 'button' ? [...elements.values()].filter(node => node.tagName === 'BUTTON') : [],
   };
-  const context = vm.createContext({ window, document, URL,
+  const context = vm.createContext({ window, document, URL, URLSearchParams,
     setTimeout(callback, delay) { const id = ++nextTimer; timers.set(id, { callback, delay }); return id; },
     clearTimeout: id => timers.delete(id),
   });

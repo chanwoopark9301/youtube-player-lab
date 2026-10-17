@@ -8,6 +8,16 @@ Deploy on Render using Node, `npm install --omit=dev`, `npm start`.
 
 YouTube embedding can fail inside ChatGPT due to frame restrictions or referrer policy even when Safari standalone playback succeeds. Playback must be explicitly verified.
 
+## Conversational assistant (0.2)
+
+- `search_youtube_videos`: reads actual public search results. ChatGPT uses the conversation it can access to choose results and explain recommendations; the server does not collect chat history.
+- `open_youtube_player`: creates a two-hour player session. Its `playerRef` lets the model reuse the same player through `control_youtube_player` (`select`, `play`, `pause`, `seek`). `get_youtube_player_state` reports actual video/time/state and freshness; queuing a command never proves playback.
+- `get_youtube_transcript`: retrieves public timestamped caption text without downloading video or audio. It uses the public web-client caption path, which is unofficial and can change or be blocked. It requires no Gemini or user API key. Missing captions and access restrictions are explicit errors. Language and automatically generated status accompany the source. Follow `nextCursor` for long transcripts; a partial page is not the full video.
+- For a question about the current player, check its fresh observed video and pass both `playerRef` and `videoId` to the transcript tool. A concurrent switch invalidates the result instead of returning the old video's speech as current content.
+- Reporting credentials remain in UI-only `_meta` and same-origin headers. The external player passes them to its own iframe in a URL fragment, never a query or YouTube URL. The most recently attached player takes control and the old surface pauses. These expiring capabilities are for the personal experiment, not account authentication. Restarting the free Render instance loses active sessions; reopen the player to reconnect.
+
+Refresh the custom plugin after deploying changed tool schemas and rerun the player for `ui://youtube-player-lab/conversation-v6.html`. Mac and mobile behavior require separate live verification; unit tests do not establish either device's playback or autoplay policy.
+
 ## Player layout and separate window
 
 The normal view contains the official YouTube player plus a compact toolbar outside the video. The wrapper and hosted page fill the available viewport without fixed pixel heights, outer margins, or document scrolling. Both iframe boundaries explicitly delegate fullscreen before navigation. Native YouTube fullscreen and the host app's fullscreen display mode are separate; a host restriction cannot be overridden by the child page. The earlier diagnostic UI remains available at `/diagnostics`.

@@ -41,3 +41,22 @@ test('forwards subsequent parent videos to the exact player origin with only the
   });
   assert.deepEqual(wrapper.sent, [{ message: videoMessage('aqz-KE-bpKQ'), targetOrigin: 'https://player.example.test' }]);
 });
+
+test('relays only valid UI-only reporting credentials and keeps them out of navigation queries',async()=>{
+  const wrapper=openWrapper({topLevel:true});
+  const connection={playerRef:'a'.repeat(43),reportKey:'b'.repeat(43)};
+  wrapper.load();
+  wrapper.receive({method:'ui/notifications/tool-result',params:{structuredContent:{videoId:'jNQXAC9IVRw'},_meta:{playerConnection:{...connection,secret:'do not relay'}}}});
+  assert.deepEqual(wrapper.sent[0].message.params._meta,{playerConnection:connection});
+  await wrapper.click('popup-button');
+  const url=new URL(wrapper.opened[0][0]);
+  assert.equal(url.searchParams.get('videoId'),'jNQXAC9IVRw');
+  assert.equal(url.searchParams.has('reportKey'),false);
+  assert.equal(new URLSearchParams(url.hash.slice(1)).get('reportKey'),connection.reportKey);
+});
+
+test('ignores connection fields in model-visible content or malformed private metadata',()=>{
+  const wrapper=openWrapper();wrapper.load();
+  wrapper.receive({method:'ui/notifications/tool-result',params:{structuredContent:{videoId:'jNQXAC9IVRw',playerConnection:{playerRef:'a'.repeat(43),reportKey:'b'.repeat(43)}},_meta:{playerConnection:{playerRef:'short',reportKey:'b'.repeat(43)}}}});
+  assert.equal(wrapper.sent[0].message.params._meta,undefined);
+});

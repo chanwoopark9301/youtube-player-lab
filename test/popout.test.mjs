@@ -95,6 +95,17 @@ test('navigates only to the same-origin player with fullscreen and referrer perm
   assert.ok(first.title.trim(), 'the video frame needs an accessible title');
 });
 
+test('forwards private connection fragments only to the same-origin player',()=>{
+  const ref='a'.repeat(43),key='b'.repeat(43);
+  const page=openPopout({search:'?videoId=jNQXAC9IVRw#playerRef='+ref+'&reportKey='+key+'&url=https://untrusted.example'});
+  const url=playerUrl(page);
+  assert.equal(url.searchParams.has('reportKey'),false);
+  const fragment=new URLSearchParams(url.hash.slice(1));
+  assert.equal(fragment.get('playerRef'),ref);
+  assert.equal(fragment.get('reportKey'),key);
+  assert.equal(fragment.has('url'),false);
+});
+
 test('uses only valid eleven-character video IDs and never accepts an external frame URL', () => {
   for (const [value, expected] of [
     ['dQw4w9WgXcQ', 'dQw4w9WgXcQ'],

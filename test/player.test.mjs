@@ -10,6 +10,7 @@ function openPlayer({ search = '', effectiveOrigin = 'https://actual.example.tes
   const navigations = [];
   const constructors = [];
   const cues = [];
+  const connections = [], loads=[];
   const parent = {};
   const location = new URL('https://location.example.test/player' + search);
   function element(tagName = 'div') {
@@ -53,11 +54,16 @@ function openPlayer({ search = '', effectiveOrigin = 'https://actual.example.tes
       const frame = typeof target === 'string' ? document.getElementById(target) : target;
       this.getIframe = () => frame;
       this.cueVideoById = videoId => cues.push(videoId);
+      this.loadVideoById = videoId => loads.push(videoId);
+      this.getVideoData = () => ({video_id:loads.at(-1)||'M7lc1UVf-VE'});
+      this.getPlayerState = () => 1;
+      this.getCurrentTime = () => 12.5;
       constructors.push({ frame, options, player: this });
     },
   };
   const window = {
     parent, origin: effectiveOrigin, location, YT,
+    createYouTubeSessionClient(connection,adapter){connections.push({connection,adapter});return {stop(){}}},
     addEventListener(name, handler) {
       if (!listeners.has(name)) listeners.set(name, []);
       listeners.get(name).push(handler);
@@ -71,7 +77,7 @@ function openPlayer({ search = '', effectiveOrigin = 'https://actual.example.tes
     vm.runInContext(script[1], context);
   }
   return {
-    navigations, constructors, cues, parent,
+    navigations, constructors, cues, parent, connections, loads,
     apiReady() {
       assert.equal(typeof window.onYouTubeIframeAPIReady, 'function', 'the player must register the YouTube API callback');
       window.onYouTubeIframeAPIReady();
@@ -174,4 +180,33 @@ test('omits the origin parameter for opaque and non-HTTP execution origins', () 
     runtime.apiReady();
     assert.equal(new URL(navigation(runtime).src).searchParams.has('origin'), false, `execution origin ${effectiveOrigin} must not become a player origin parameter`);
   }
+});
+
+test('connects UI-only session credentials after YouTube readiness and reads actual API state',()=>{
+  const runtime=openPlayer();
+  const connection={playerRef:'a'.repeat(43),reportKey:'b'.repeat(43)};
+  const data={method:'ui/notifications/tool-result',params:{structuredContent:{videoId:'M7lc1UVf-VE'},_meta:{playerConnection:connection}}};
+  runtime.message({},data);
+  runtime.apiReady();runtime.ready();
+  assert.equal(runtime.connections.length,0,'a spoofed parent must not attach a session');
+  runtime.message(runtime.parent,data);
+  assert.equal(runtime.connections.length,1);
+  const adapter=runtime.connections[0].adapter;
+  assert.equal(adapter.read().currentTime,12.5);
+  assert.equal(adapter.read().state,'playing');
+  adapter.select('jNQXAC9IVRw');
+  assert.deepEqual(runtime.loads,['jNQXAC9IVRw']);
+  runtime.message(runtime.parent,data);
+  assert.equal(runtime.connections.length,1,'duplicate tool notification must not replace its own connection');
+});
+
+test('a recovered YouTube playback clears an earlier error from observed session state',()=>{
+  const runtime=openPlayer();runtime.apiReady();runtime.ready();
+  runtime.message(runtime.parent,{method:'ui/notifications/tool-result',params:{structuredContent:{videoId:'M7lc1UVf-VE'},_meta:{playerConnection:{playerRef:'a'.repeat(43),reportKey:'b'.repeat(43)}}}});
+  const events=runtime.constructors[0].options.events;
+  const adapter=runtime.connections[0].adapter;
+  events.onError({data:5});assert.equal(adapter.read().state,'error');
+  events.onStateChange({data:1});
+  assert.equal(adapter.read().state,'playing');
+  assert.equal(adapter.read().error,undefined);
 });

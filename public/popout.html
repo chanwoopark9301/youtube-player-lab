@@ -83,7 +83,11 @@ frame.title='YouTube 영상 플레이어';
 frame.allow='autoplay; fullscreen; picture-in-picture';
 frame.allowFullscreen=true;
 frame.referrerPolicy='strict-origin-when-cross-origin';
-frame.src='/player?'+new URLSearchParams({videoId:video}).toString();
+const connection=new URLSearchParams(location.hash.slice(1));
+const validKey=value=>typeof value==='string'&&/^[A-Za-z0-9_-]{43}$/.test(value);
+let fragment='';
+if(validKey(connection.get('playerRef'))&&validKey(connection.get('reportKey')))fragment='#'+new URLSearchParams({playerRef:connection.get('playerRef'),reportKey:connection.get('reportKey')}).toString();
+frame.src='/player?'+new URLSearchParams({videoId:video}).toString()+fragment;
 showStatus('');syncFullscreen();
 if(params.get('fullscreen')==='1'){
   const tryAutomatic=()=>{if(autoAttempted)return;autoAttempted=true;return toggleFullscreen(true)};

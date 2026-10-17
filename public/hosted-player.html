@@ -34,6 +34,8 @@ const status=document.getElementById('display-status'),state=document.documentEl
 const pending=new Map();
 let bridgeReady=false,hostOpenLinks=false,busy=false,nextId=0;
 let loaded=false,pendingVideo=null,video='M7lc1UVf-VE',lastFullscreen=false;
+let connection=null;
+const validKey=value=>typeof value==='string'&&/^[A-Za-z0-9_-]{43}$/.test(value);
 function showStatus(text){status.textContent=text;status.hidden=!text}
 function renderControls(){
   popupButton.disabled=busy;expandButton.disabled=busy;
@@ -43,6 +45,7 @@ function renderControls(){
 function destination(fullscreen){
   const url=new URL('/popout',playerOrigin);url.searchParams.set('videoId',video);
   if(fullscreen)url.searchParams.set('fullscreen','1');
+  if(connection)url.hash=new URLSearchParams(connection).toString();
   return url.href;
 }
 function fallback(href,text){
@@ -85,7 +88,7 @@ popupButton.addEventListener('click',()=>openPlayer(false));
 expandButton.addEventListener('click',()=>openPlayer(true));
 window.addEventListener('openai:set_globals',renderControls);
 function forward(videoId){
-  frame.contentWindow.postMessage({method:'ui/notifications/tool-result',params:{structuredContent:{videoId}}},playerOrigin);
+  frame.contentWindow.postMessage({method:'ui/notifications/tool-result',params:{structuredContent:{videoId},...(connection?{_meta:{playerConnection:connection}}:{})}},playerOrigin);
 }
 window.addEventListener('message',event=>{
   if(event.source!==window.parent)return;
@@ -99,6 +102,8 @@ window.addEventListener('message',event=>{
   if(message?.method!=='ui/notifications/tool-result')return;
   const videoId=message.params?.structuredContent?.videoId;
   if(typeof videoId!=='string'||!/^[A-Za-z0-9_-]{11}$/.test(videoId))return;
+  const candidate=message.params?._meta?.playerConnection;
+  if(validKey(candidate?.playerRef)&&validKey(candidate?.reportKey))connection={playerRef:candidate.playerRef,reportKey:candidate.reportKey};
   video=videoId;state.videoId=videoId;externalLink.href=destination(lastFullscreen);
   if(loaded)forward(videoId);else pendingVideo=videoId;
 });
@@ -110,7 +115,7 @@ frame.referrerPolicy='strict-origin-when-cross-origin';
 frame.src=playerOrigin+'/player';
 externalLink.href=destination(false);externalLink.target='_blank';externalLink.rel='noopener';renderControls();
 if(typeof window.parent.postMessage==='function'&&window.parent!==window){
-  request('ui/initialize',{appInfo:{name:'youtube-player-lab',version:'0.1.5'},appCapabilities:{availableDisplayModes:['inline','fullscreen']},protocolVersion:'2026-01-26'}).then(result=>{
+  request('ui/initialize',{appInfo:{name:'youtube-player-lab',version:'0.2.0'},appCapabilities:{availableDisplayModes:['inline','fullscreen']},protocolVersion:'2026-01-26'}).then(result=>{
     if(!result||typeof result.protocolVersion!=='string'||!result.hostCapabilities)throw new Error('initialize');
     bridgeReady=true;hostOpenLinks=Boolean(result.hostCapabilities.openLinks);renderControls();
     window.parent.postMessage({jsonrpc:'2.0',method:'ui/notifications/initialized'},'*');

@@ -15,15 +15,40 @@
 <body>
 <div id="player"></div>
 <p id="message" role="status" hidden></p>
+<script src="/session-client.js"></script>
 <script>
 (()=>{
 'use strict';
 const valid=id=>typeof id==='string'&&/^[A-Za-z0-9_-]{11}$/.test(id);
 const initial=new URLSearchParams(location.search).get('videoId');
 let video=valid(initial)?initial:'M7lc1UVf-VE',loadedVideo=null,player=null,ready=false;
+let connection=null,sessionClient=null,connectedRef=null;
 const message=document.getElementById('message');
 const state=document.documentElement.dataset;
 const showError=text=>{message.textContent=text;message.hidden=false};
+const validKey=value=>typeof value==='string'&&/^[A-Za-z0-9_-]{43}$/.test(value);
+function connect(candidate){
+  if(!validKey(candidate?.playerRef)||!validKey(candidate?.reportKey))return;
+  connection={playerRef:candidate.playerRef,reportKey:candidate.reportKey};
+  startConnection();
+}
+function startConnection(){
+  if(!ready||!connection||connectedRef===connection.playerRef||typeof window.createYouTubeSessionClient!=='function')return;
+  sessionClient?.stop();connectedRef=connection.playerRef;
+  sessionClient=window.createYouTubeSessionClient(connection,{
+    select:id=>{video=id;state.videoId=id;delete state.playerError;message.hidden=true;player.loadVideoById(id)},
+    play:()=>player.playVideo(),pause:()=>player.pauseVideo(),seek:seconds=>player.seekTo(seconds,true),
+    read:()=>{
+      const actualId=player.getVideoData()?.video_id;
+      if(!valid(actualId))return null;
+      const states={'-1':'unstarted',0:'ended',1:'playing',2:'paused',3:'buffering',5:'cued'};
+      return {videoId:actualId,state:state.playerError?'error':states[player.getPlayerState()]||'unstarted',currentTime:player.getCurrentTime(),...(state.playerError?{error:state.playerError}:{})};
+    },
+    status:value=>{state.controlState=value}
+  });
+}
+const fragment=new URLSearchParams(window.location?.hash?.slice(1)||'');
+connect({playerRef:fragment.get('playerRef'),reportKey:fragment.get('reportKey')});
 function selectVideo(id){
   if(!valid(id)||id===video)return;
   video=id;state.videoId=id;message.hidden=true;
@@ -32,11 +57,14 @@ function selectVideo(id){
 window.addEventListener('message',event=>{
   if(event.source!==window.parent)return;
   const data=event.data;
-  if(data?.method==='ui/notifications/tool-result')selectVideo(data.params?.structuredContent?.videoId);
+  if(data?.method==='ui/notifications/tool-result'){
+    selectVideo(data.params?.structuredContent?.videoId);
+    connect(data.params?._meta?.playerConnection);
+  }
 });
 window.onYouTubeIframeAPIReady=()=>{
   try{
-    const params=new URLSearchParams({enablejsapi:'1',controls:'1',fs:'1',playsinline:'1'});
+    const params=new URLSearchParams({enablejsapi:'1',controls:'1',fs:'1',playsinline:'1',autoplay:'1'});
     const origin=typeof window.origin==='string'?window.origin:location.origin;
     if(/^https?:\/\//.test(origin))params.set('origin',origin);
     const frame=document.createElement('iframe');
@@ -48,8 +76,8 @@ window.onYouTubeIframeAPIReady=()=>{
     frame.src='https://www.youtube.com/embed/'+video+'?'+params.toString();
     document.getElementById('player').replaceWith(frame);
     player=new YT.Player(frame,{events:{
-      onReady:event=>{player=event.target;ready=true;state.playerState='ready';if(video!==loadedVideo)player.cueVideoById(video)},
-      onStateChange:event=>{state.playerState=String(event.data);if(event.data===1)message.hidden=true},
+      onReady:event=>{player=event.target;ready=true;state.playerState='ready';if(video!==loadedVideo)player.cueVideoById(video);startConnection()},
+      onStateChange:event=>{state.playerState=String(event.data);if(event.data===1){delete state.playerError;message.hidden=true}},
       onError:event=>{state.playerError=String(event.data)}
     }});
   }catch{state.playerError='initialization';if(document.getElementById('player').tagName!=='IFRAME')showError('플레이어를 불러올 수 없습니다. 다시 열어 주세요.')}
