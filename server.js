@@ -14,7 +14,8 @@ const playerUrl = new URL(process.env.PUBLIC_ORIGIN || 'https://youtube-player-l
 if (!['http:','https:'].includes(playerUrl.protocol)) throw new Error('PUBLIC_ORIGIN must be an HTTP(S) origin');
 const playerOrigin = playerUrl.origin;
 const appHtml = readFileSync(join(base,'public','hosted-player.html'),'utf8').replaceAll('__PLAYER_ORIGIN__',playerOrigin);
-const RESOURCE = 'ui://youtube-player-lab/popup-v3.html';
+const RESOURCE = 'ui://youtube-player-lab/popup-status-v4.html';
+const POPUP_RESOURCE = 'ui://youtube-player-lab/popup-v3.html';
 const VIDEO_ONLY_RESOURCE = 'ui://youtube-player-lab/video-only-v2.html';
 const PREVIOUS_RESOURCE = 'ui://youtube-player-lab/https-player-v1.html';
 const LEGACY_RESOURCE = 'ui://youtube-player-lab/player.html';
@@ -24,8 +25,8 @@ const port = Number(process.env.PORT || 8787);
 const widgetOrigin = process.env.WIDGET_ORIGIN;
 
 function createMcpServer() {
-  const server = new McpServer({name:'youtube-player-lab',version:'0.1.3'});
-  for (const [index,uri] of [RESOURCE,VIDEO_ONLY_RESOURCE,PREVIOUS_RESOURCE,LEGACY_RESOURCE].entries()) registerAppResource(server,'youtube-player-lab-'+index,uri,{},async()=>({
+  const server = new McpServer({name:'youtube-player-lab',version:'0.1.4'});
+  for (const [index,uri] of [RESOURCE,POPUP_RESOURCE,VIDEO_ONLY_RESOURCE,PREVIOUS_RESOURCE,LEGACY_RESOURCE].entries()) registerAppResource(server,'youtube-player-lab-'+index,uri,{},async()=>({
     contents:[{uri,mimeType:RESOURCE_MIME_TYPE,text:appHtml,_meta:{
       ui:{
         prefersBorder:false,

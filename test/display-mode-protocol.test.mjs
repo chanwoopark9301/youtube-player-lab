@@ -32,6 +32,7 @@ function openApp({ openai } = {}) {
     receive(data, source = parent) { listeners.get('message')?.({ data, source }); },
     respond(request, result) { this.receive({ jsonrpc: '2.0', id: request.id, result }); },
     click(id) { return element(id).click?.(); },
+    setGlobals(globals) { listeners.get('openai:set_globals')?.({ detail: { globals } }); },
   };
 }
 
@@ -122,4 +123,32 @@ test('a stalled compatibility API also releases the display controls after timeo
   assert.equal(app.element('popup-button').disabled, false);
   assert.equal(app.document.documentElement.dataset.displayMode, 'inline');
   assert.ok(app.element('display-status').textContent);
+});
+
+test('unsupported popup notice survives later host globals and tracks changing host modes', async () => {
+  const app = openApp();
+  await initialize(app, ['inline', 'fullscreen']);
+  app.receive({ method: 'ui/notifications/host-context-changed', params: { displayMode: 'fullscreen' } });
+  // The native host sends this separate compatibility notification as well.
+  app.setGlobals({ theme: 'light' });
+  assert.equal(app.element('display-status').hidden, false);
+  assert.ok(app.element('display-status').textContent);
+  assert.equal(app.document.documentElement.dataset.availableDisplayModes, 'inline,fullscreen');
+  app.receive({ method: 'ui/notifications/host-context-changed', params: { availableDisplayModes: ['inline', 'pip', 'fullscreen'] } });
+  assert.equal(app.element('popup-button').disabled, false);
+  assert.equal(app.element('display-status').hidden, true);
+});
+
+test('a failed inline return is not hidden by the unsupported-popup explanation', async () => {
+  const app = openApp();
+  await initialize(app, ['inline', 'fullscreen']);
+  const capabilityNotice = app.element('display-status').textContent;
+  const action = app.click('inline-button');
+  const request = requests(app)[0];
+  app.receive({ jsonrpc: '2.0', id: request.id, error: { code: -32603, message: 'declined' } });
+  await action;
+  assert.notEqual(app.element('display-status').textContent, capabilityNotice);
+  const failureNotice = app.element('display-status').textContent;
+  app.setGlobals({ theme: 'light' });
+  assert.equal(app.element('display-status').textContent, failureNotice);
 });
