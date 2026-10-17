@@ -150,6 +150,30 @@ test('maps transport failures to a sanitized network error', async () => {
   assert.equal(f.calls.length, 3);
 });
 
+test('annotates failures with the exact watch, player or captions stage without exposing request URLs', async () => {
+  for (const stage of ['watch', 'player', 'captions']) {
+    const f = fixture({ [stage]: () => { throw new Error('request failed: ' + manual.baseUrl); } });
+    await assert.rejects(fetchTranscript(VIDEO, { fetchImpl: f.fetchImpl }), error => {
+      assert.equal(error.code, 'network');
+      assert.equal(error.stage, stage);
+      assert.doesNotMatch(JSON.stringify(error), /signature|private-signed-value|https:/);
+      return true;
+    });
+  }
+});
+
+test('retains a blocked stage and performs no later request after a block at any step', async () => {
+  for (const [index, stage] of ['watch', 'player', 'captions'].entries()) {
+    const f = fixture({ [stage]: () => new Response('blocked', { status: 403 }) });
+    await assert.rejects(fetchTranscript(VIDEO, { fetchImpl: f.fetchImpl }), error => {
+      assert.equal(error.code, 'blocked');
+      assert.equal(error.stage, stage);
+      return true;
+    });
+    assert.equal(f.calls.length, index + 1);
+  }
+});
+
 test('rejects malformed player or caption data rather than returning an empty success', async () => {
   for (const overrides of [
     { watch: () => new Response('<html>missing configuration</html>', { headers: { 'content-type': 'text/html' } }) },

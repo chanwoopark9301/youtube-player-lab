@@ -95,10 +95,11 @@ test('a late caption response cannot be returned as the current video after a sw
 });
 
 test('blocked transcript requests return a failure instead of video-description evidence',async t=>{
-  const a=await app(t,{transcript:async()=>{throw Object.assign(new Error('Public captions request was blocked'),{code:'blocked'})}});
+  const a=await app(t,{transcript:async()=>{throw Object.assign(new Error('Public captions request was blocked'),{code:'blocked',stage:'player'})}});
   const r=await a.call('get_youtube_transcript',{videoId:A});
   assert.equal(r.isError,true);
   assert.equal(r.structuredContent.code,'blocked');
+  assert.equal(r.structuredContent.stage,'player');
   assert.equal(r.structuredContent.cues,undefined);
 });
 
