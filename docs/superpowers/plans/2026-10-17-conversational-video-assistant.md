@@ -38,3 +38,8 @@
 - Ruling: Existing clone is already isolated to this task; no additional checkout is needed.
 - Independent review found three defects, each reproduced RED and fixed GREEN: select→pause race, oversized first caption cue, and stale error after playback recovery. Full suite 88/88 and syntax/whitespace checks passed on 2026-10-17.
 - Local actual browser currently shows a blank new YouTube iframe for both the new code and the previous production baseline. Existing previously opened production player still displays video. Do not treat simulated client tests as successful actual playback.
+- Ruling: replace the unnecessary video watch-page request with the normal public `/sw.js_data` bootstrap, retaining one player client and stopping on blocks. The global public key is the only watch-page value consumed. No alternate client retries or access-check workarounds.
+- Local bootstrap implementation passed 93/93 tests, plus actual two-video Node 20 HTTP checks (466 and 6 caption cues). Render verification remains a deployment gate.
+- MCP connector now exposes all five tools. In the existing native Mac card, an actual play command was acknowledged and reported `playing` at 12.28, 14.98 and 18.79 seconds. This supersedes the earlier short automatic-play observation for this tested play command; it does not explain that earlier pause or establish mobile behavior.
+- `f3f59de` fixes delayed host tool results overriding a newer server-selected video. Independent regression review passed. Recommendation-list identities and content acquisition/coverage metadata remain implementation gaps against the spec.
+- The user confirmed the latest native Mac card plays continuously for more than five seconds after a foreground YouTube Play click.

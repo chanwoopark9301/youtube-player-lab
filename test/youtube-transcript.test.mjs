@@ -3,7 +3,8 @@ import test from 'node:test';
 import { fetchTranscript, TranscriptError } from '../lib/youtube-transcript.js';
 
 const VIDEO = 'M7lc1UVf-VE';
-const WATCH = '<html><script>ytcfg.set({"INNERTUBE_API_KEY":"public-fixture-config"});</script></html>';
+// Public /sw.js_data JSPB reduced from the successful 2026-10-17 probe.
+const BOOTSTRAP = ")]}'\n" + JSON.stringify([['yt.sw.adr', null, [[['en', 'US']], 'public-fixture-config']]]);
 // Reduced to the fields consumed from the successful 2026-10-17 public response.
 const manual = { languageCode: 'en', baseUrl: 'https://www.youtube.com/api/timedtext?v=M7lc1UVf-VE&lang=en&signature=private-signed-value&fmt=srv3' };
 const generated = { ...manual, kind: 'asr' };
@@ -11,15 +12,15 @@ const payload = {
   events: [{ tStartMs: 10349, dDurationMs: 1000, segs: [{ utf8: 'JEFF POSNICK: Hey, everybody.' }] }],
 };
 const jsonResponse = value => new Response(JSON.stringify(value), { headers: { 'content-type': 'application/json' } });
-const watchResponse = () => new Response(WATCH, { headers: { 'content-type': 'text/html' } });
+const bootstrapResponse = () => new Response(BOOTSTRAP, { headers: { 'content-type': 'application/json' } });
 const playerResponse = (tracks = [manual, generated]) => jsonResponse({
   playabilityStatus: { status: 'OK' },
   captions: { playerCaptionsTracklistRenderer: { captionTracks: tracks } },
 });
 
-function fixture({ watch = watchResponse, player = () => playerResponse(), captions = () => jsonResponse(payload) } = {}) {
+function fixture({ bootstrap = bootstrapResponse, player = () => playerResponse(), captions = () => jsonResponse(payload) } = {}) {
   const calls = [];
-  const responses = [watch, player, captions];
+  const responses = [bootstrap, player, captions];
   return {
     calls,
     fetchImpl: async (input, options) => {
@@ -45,10 +46,14 @@ test('fetches public timed captions in seconds and returns canonical provenance 
     cues: [{ start: 10.349, duration: 1, text: 'JEFF POSNICK: Hey, everybody.' }],
   });
   assert.equal(f.calls.length, 3);
-  assert.equal(f.calls[0].url.href, 'https://www.youtube.com/watch?v=M7lc1UVf-VE');
+  assert.equal(f.calls[0].url.href, 'https://www.youtube.com/sw.js_data');
+  assert.equal(f.calls.some(call => call.url.pathname === '/watch'), false, 'caption retrieval must not request a watch page');
   assert.equal(f.calls[1].url.pathname, '/youtubei/v1/player');
   assert.equal(f.calls[1].options.method, 'POST');
-  assert.equal(JSON.parse(f.calls[1].options.body).videoId, VIDEO);
+  assert.equal(f.calls[1].url.searchParams.get('key'), 'public-fixture-config');
+  assert.deepEqual(JSON.parse(f.calls[1].options.body), {
+    context: { client: { clientName: 'ANDROID', clientVersion: '20.10.38' } }, videoId: VIDEO,
+  });
   assert.equal(f.calls[2].url.pathname, '/api/timedtext');
   assert.equal(f.calls[2].url.searchParams.get('fmt'), 'json3');
   for (const { options } of f.calls) {
@@ -109,10 +114,10 @@ test('returns unavailable when the player denies playback or has no public capti
 
 test('stops on access challenges and HTTP blocks without trying another client or caption URL', async () => {
   const scenarios = [
-    { watch: () => new Response('rate limited', { status: 429 }), count: 1 },
-    { watch: () => new Response('forbidden', { status: 403 }), count: 1 },
-    { watch: () => new Response('<div class="g-recaptcha"></div>', { headers: { 'content-type': 'text/html' } }), count: 1 },
-    { watch: () => new Response('', { status: 302, headers: { location: 'https://consent.youtube.com/m' } }), count: 1 },
+    { bootstrap: () => new Response('rate limited', { status: 429 }), count: 1 },
+    { bootstrap: () => new Response('forbidden', { status: 403 }), count: 1 },
+    { bootstrap: () => new Response('<div class="g-recaptcha"></div>', { headers: { 'content-type': 'text/html' } }), count: 1 },
+    { bootstrap: () => new Response('', { status: 302, headers: { location: 'https://consent.youtube.com/m' } }), count: 1 },
     { player: () => jsonResponse({ playabilityStatus: { status: 'LOGIN_REQUIRED', reason: 'Sign in to confirm you’re not a bot' } }), count: 2 },
     { player: () => playerResponse([{ ...manual, baseUrl: manual.baseUrl + '&exp=xpe' }]), count: 2 },
     { captions: () => new Response('<div class="g-recaptcha"></div>', { headers: { 'content-type': 'text/html' } }), count: 3 },
@@ -150,8 +155,8 @@ test('maps transport failures to a sanitized network error', async () => {
   assert.equal(f.calls.length, 3);
 });
 
-test('annotates failures with the exact watch, player or captions stage without exposing request URLs', async () => {
-  for (const stage of ['watch', 'player', 'captions']) {
+test('annotates failures with the exact bootstrap, player or captions stage without exposing request URLs', async () => {
+  for (const stage of ['bootstrap', 'player', 'captions']) {
     const f = fixture({ [stage]: () => { throw new Error('request failed: ' + manual.baseUrl); } });
     await assert.rejects(fetchTranscript(VIDEO, { fetchImpl: f.fetchImpl }), error => {
       assert.equal(error.code, 'network');
@@ -163,7 +168,7 @@ test('annotates failures with the exact watch, player or captions stage without 
 });
 
 test('retains a blocked stage and performs no later request after a block at any step', async () => {
-  for (const [index, stage] of ['watch', 'player', 'captions'].entries()) {
+  for (const [index, stage] of ['bootstrap', 'player', 'captions'].entries()) {
     const f = fixture({ [stage]: () => new Response('blocked', { status: 403 }) });
     await assert.rejects(fetchTranscript(VIDEO, { fetchImpl: f.fetchImpl }), error => {
       assert.equal(error.code, 'blocked');
@@ -176,7 +181,6 @@ test('retains a blocked stage and performs no later request after a block at any
 
 test('rejects malformed player or caption data rather than returning an empty success', async () => {
   for (const overrides of [
-    { watch: () => new Response('<html>missing configuration</html>', { headers: { 'content-type': 'text/html' } }) },
     { player: () => new Response('{broken', { headers: { 'content-type': 'application/json' } }) },
     { player: () => jsonResponse({}) },
     { captions: () => new Response('', { headers: { 'content-type': 'application/json' } }) },
@@ -192,17 +196,40 @@ test('rejects malformed player or caption data rather than returning an empty su
   await rejectsCode(fetchTranscript(VIDEO, { fetchImpl: f.fetchImpl }), 'unavailable');
 });
 
+test('rejects malformed, missing or misplaced bootstrap keys without falling back to a watch page', async () => {
+  for (const text of [
+    JSON.stringify([['yt.sw.adr', null, [[], 'public-fixture-config']]]),
+    ")]}'\n{broken",
+    ")]}'\n[]",
+    ")]}'\n" + JSON.stringify([['yt.sw.adr', null, []]]),
+    ")]}'\n" + JSON.stringify([['yt.sw.adr', null, [[], null]]]),
+    ")]}'\n" + JSON.stringify([['yt.sw.adr', null, [[], 'short']]]),
+    ")]}'\n" + JSON.stringify([['yt.sw.adr', null, [[], 'x'.repeat(101)]]]),
+    ")]}'\n" + JSON.stringify([['yt.sw.adr', null, [[], 'public key?with=parameters']]]),
+    ")]}'\n" + JSON.stringify([['yt.sw.adr', null, [[], null, 'public-fixture-config']]]),
+  ]) {
+    const f = fixture({ bootstrap: () => new Response(text, { headers: { 'content-type': 'application/json' } }) });
+    await assert.rejects(fetchTranscript(VIDEO, { fetchImpl: f.fetchImpl }), error => {
+      assert.equal(error.code, 'invalid_response');
+      assert.equal(error.stage, 'bootstrap');
+      assert.doesNotMatch(JSON.stringify(error), /public-fixture-config|public key/);
+      return true;
+    });
+    assert.equal(f.calls.length, 1);
+  }
+});
+
 test('enforces the body limit from both Content-Length and streamed bytes', async () => {
   let cancelled = false;
   const oversized = () => new Response(new ReadableStream({
     start(controller) { controller.enqueue(new Uint8Array(4 * 1024 * 1024 + 1)); },
     cancel() { cancelled = true; },
-  }), { headers: { 'content-type': 'text/html' } });
-  for (const watch of [
-    () => new Response(WATCH, { headers: { 'content-type': 'text/html', 'content-length': String(4 * 1024 * 1024 + 1) } }),
+  }), { headers: { 'content-type': 'application/json' } });
+  for (const bootstrap of [
+    () => new Response(BOOTSTRAP, { headers: { 'content-type': 'application/json', 'content-length': String(4 * 1024 * 1024 + 1) } }),
     oversized,
   ]) {
-    const f = fixture({ watch });
+    const f = fixture({ bootstrap });
     await rejectsCode(fetchTranscript(VIDEO, { fetchImpl: f.fetchImpl }), 'invalid_response');
     assert.equal(f.calls.length, 1);
   }

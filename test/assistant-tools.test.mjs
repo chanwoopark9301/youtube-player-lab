@@ -103,6 +103,15 @@ test('blocked transcript requests return a failure instead of video-description 
   assert.equal(r.structuredContent.cues,undefined);
 });
 
+test('public bootstrap failures preserve their diagnostic stage without leaking configuration',async t=>{
+  const a=await app(t,{transcript:async()=>{throw Object.assign(new Error('YouTube blocked the public client configuration request.'),{code:'blocked',stage:'bootstrap'})}});
+  const r=await a.call('get_youtube_transcript',{videoId:A});
+  assert.equal(r.isError,true);
+  assert.equal(r.structuredContent.code,'blocked');
+  assert.equal(r.structuredContent.stage,'bootstrap');
+  assert.deepEqual(Object.keys(r.structuredContent).sort(),['code','message','stage']);
+});
+
 test('a long individual caption is paged without dropping text or exceeding the response bound',async t=>{
   const original='x'.repeat(20001);
   const a=await app(t,{transcript:async videoId=>({videoId,language:'en',source:'youtube-public-captions',cues:[{start:12,duration:20,text:original}]})});

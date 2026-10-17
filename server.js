@@ -24,7 +24,7 @@ const readOnly={readOnlyHint:true,openWorldHint:true,destructiveHint:false};
 const mutating={readOnlyHint:false,openWorldHint:true,destructiveHint:false};
 const textResult=data=>({content:[{type:'text',text:JSON.stringify(data)}],structuredContent:data});
 function failure(error){
-  return {...textResult({code:error.code||'unavailable',message:error.message||'Request could not be completed.',...(['watch','player','captions'].includes(error.stage)?{stage:error.stage}:{})}),isError:true};
+  return {...textResult({code:error.code||'unavailable',message:error.message||'Request could not be completed.',...(['bootstrap','watch','player','captions'].includes(error.stage)?{stage:error.stage}:{})}),isError:true};
 }
 const attempt=handler=>async args=>{try{return await handler(args)}catch(error){return failure(error)}};
 function boundedCues(cues){

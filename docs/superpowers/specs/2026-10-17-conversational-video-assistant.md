@@ -24,7 +24,7 @@ The separate player tab requires a server control channel because it opens with 
 
 ## Content-source choice
 
-Use the public watch/player/timedtext text path. Local direct HTTP probes retrieved actual timestamped captions for two public videos without credentials, proxies, or media downloads. Implement the same path in Node and verify it separately from the Render IP. If YouTube denies the request, requires login/challenge, or has no captions, return that specific failure without bypassing it. A provided transcript remains an explicitly labeled fallback; video metadata is never a substitute for spoken-content evidence. No Gemini connection or API-key onboarding.
+Use the public bootstrap/player/timedtext text path. The watch request previously supplied only global public client configuration; it is not needed for the video's speech. The normal `/sw.js_data` bootstrap supplies that configuration directly. Local direct HTTP probes retrieved actual timestamped captions for two public videos without credentials, proxies, or media downloads. Implement the same path in Node and verify it separately from the Render IP. If YouTube denies the request, requires login/challenge, or has no captions, return that specific failure without bypassing it. A provided transcript remains an explicitly labeled fallback; video metadata is never a substitute for spoken-content evidence. No Gemini connection or API-key onboarding.
 
 YouTube Data API caption download does not provide arbitrary public-video transcripts: it requires OAuth and permission to edit the video. An API key for search does not solve that restriction. Desktop browser transcript export was tested for one sample but is not the mobile/server solution.
 
